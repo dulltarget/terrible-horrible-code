@@ -3,6 +3,7 @@ ORG 0x0000
 
 ;DOCUMENTATION: This may be branched into a text file later.
 
+    ;V0.0.4 | Input is now properly stored and limited, kernel text can no longer be deleted.
     ;V0.0.3 | Stack redefined for usage in later variants, input buffer defined.
     ;V0.0.2 | Implemented F10 as a special key, changing video mode and launching a demo. This will remain untouched until much later.
     ;V0.0.1b | Reformatted code for attachment to BOOTLOADER.ASM.
@@ -10,8 +11,12 @@ ORG 0x0000
     ;V0.0.0 | Added basic text functionality.
 
 ;FUNCTIONS AND THEIR PARAMETERS:
-    ;_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console.
+    ;_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console. Push and pop BX before/after using this or you will regret it.
     ;_BOOTKEY: [nil], Not necessarily a function, but enters the graphical environment. There will be no way to return to the terminal.
+
+
+; Magic Destroyer MAGIC_DESTROYER_VERSION
+INBUFSIZE EQU 16
 
 ; SECTION .TERMINAL
 
@@ -36,11 +41,17 @@ _READ:
     JE _BACKSPACEPRESSED
     CMP AH, 0x44 ;F10 Scan Code
     JE _BOOTKEY
+    CMP AL, 0
+    JE _READ
+    MOV BX, [INPTR]
+    CMP BX, INBUFSIZE ; Is buffer full?
+    JAE _READ
     JMP _WRITE
 
 _WRITE:
+    MOV [INBUF + BX], AL ; Powerhousing
+    INC WORD [INPTR]
     MOV AH, 0Eh
-    MOV CX, 1 
     INT 0x10
     JMP _READ
 
@@ -54,16 +65,23 @@ _WRITESTR:
     JMP _WRITESTR
 
 _ENTERPRESSED:
+    MOV WORD [INPTR], 0
     MOV AH, 14
     MOV AL, 0x0D
     INT 0x10
     MOV AL, 0x0A
     INT 0x10
+    PUSH BX
     MOV BX, KERNPREFIX
     CALL _WRITESTR
+    POP BX
     JMP _READ
 
 _BACKSPACEPRESSED:
+    MOV BX, [INPTR]
+    CMP BX, 0
+    JE _READ
+    DEC WORD [INPTR]
     MOV AH, 14
     INT 0x10
     MOV AL, 0x20
@@ -83,7 +101,7 @@ _BOOTKEY:
 
 INTROMES   db 'BOOT SUCCESSFUL. TERMINAL.', 0
 KERNPREFIX    db 'KERNEL*//>', 0
-INBUF   TIMES 17 db 0
+INBUF   TIMES (INBUFSIZE + 1) db 0
 INPTR   dw 0   
 
 ; SECTION .GRAPHICS
