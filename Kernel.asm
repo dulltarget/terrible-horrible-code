@@ -3,7 +3,8 @@ ORG 0x0000
 
 ;DOCUMENTATION: This may be branched into a text file later.
 
-    ;V0.1.0a | Now you can execute one, yes ONE command. The capability is here, but certainly not formatted to handle a larger table yet. 0.1.0b will take care of this.
+    ;V0.1.0b  | Command table is now formatted to handle numerous commands. 
+    ;V0.1.0  | Now you can execute one, yes ONE command. The capability is here, but certainly not formatted to handle a larger table yet.
     ;V0.0.4  | Input is now properly stored and limited, kernel text can no longer be deleted.
     ;V0.0.3  | Stack redefined for usage in later variants, input buffer defined.
     ;V0.0.2  | Implemented F10 as a special key, changing video mode and launching a demo. This will remain untouched until much later.
@@ -16,10 +17,10 @@ ORG 0x0000
     ;_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console. Push and pop BX before/after using this or you will regret it.
     ;_BOOTKEY:  [nil], Not necessarily a function, but enters the graphical environment. There will be no way to return to the terminal.
 
-; Magic Destroyer MAGIC_DESTROYER_VERSION (constants)
+; CONSTANTS
 
 INBUFSIZE EQU 16
-%define KERNVER    '0.1.0a'
+%define KERNVER '0.1.0b'
 
 ; SECTION .TERMINAL
 
@@ -115,29 +116,48 @@ _INFO:
     POP BX
     RET
 
+_HANG:
+    MOV BX, NOCOMM
+    CALL _WRITESTR
+    JMP _HANG ; Hey, a state without exit mustn't remain efficient.
+
 _CMDINT:
    MOV SI, CMDLIST + 1
    MOV DI, INBUF
 _CMDCMP: ; Compares the nth entry of the user input to the command in the table pointed to by SI.
+   CMP BYTE [SI], 0xFF
+   JE _NOCMD
    CMPSB
    JNE _CMDNXT
    CMP BYTE [SI - 1], 0
    JNE _CMDCMP
    JMP [SI] 
 _CMDNXT:
-   RET ; PLACEHOLDER FOR 0.1.0B!
-    
+   LODSB
+   CMP AL, 0
+   JNE _CMDNXT
+   MOV DI, INBUF
+   ADD SI, 2
+   JMP _CMDCMP
+_NOCMD:
+    RET
+
 ; SECTION .TERMINAL_DATA
 
-INTROMES   db 'BOOT SUCCESSFUL. TERMINAL.', 0
+INTROMES      db 'BOOT SUCCESSFUL. TERMINAL.', 0
 KERNPREFIX    db 'KERNEL*//>', 0
-INBUF   TIMES (INBUFSIZE + 1) db 0
-INPTR   dw 0   
-INFSTR   db 'THE KERNEL V', KERNVER, 0x0D, 0x0A, 0
+NOCOMM        db 'NO COMMAND', 0x0D, 0x0A, 0
+INBUF         TIMES (INBUFSIZE + 1) db 0
+INPTR         dw 0   
+INFSTR        db 'THE KERNEL V', KERNVER, 0x0D, 0x0A, 0
 
-CMDLIST   db 0
-TINFO   db 'INFO', 0
-INFO   dw _INFO
+
+CMDLIST       db 0
+TINFO         db 'INFO', 0
+INFO          dw _INFO
+THANG         db 'HANG', 0
+HANG          dw _HANG
+END           db 0xFF
 
 ; SECTION .GRAPHICS
 
