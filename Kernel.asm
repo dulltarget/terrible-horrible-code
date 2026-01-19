@@ -3,7 +3,8 @@ ORG 0x0000
 
 ;DOCUMENTATION: This may be branched into a text file later.
 
-    ;V0.1.0b  | Command table is now formatted to handle numerous commands. 
+    ;v0.1.1  | LOAD command added that hands control over to the disk in floppy drive two.
+    ;V0.1.0b | Command table is now formatted to handle numerous commands. 
     ;V0.1.0  | Now you can execute one, yes ONE command. The capability is here, but certainly not formatted to handle a larger table yet.
     ;V0.0.4  | Input is now properly stored and limited, kernel text can no longer be deleted.
     ;V0.0.3  | Stack redefined for usage in later variants, input buffer defined.
@@ -20,7 +21,7 @@ ORG 0x0000
 ; CONSTANTS
 
 INBUFSIZE EQU 16
-%define KERNVER '0.1.0b'
+%define KERNVER '0.1.1'
 
 ; SECTION .TERMINAL
 
@@ -121,19 +122,42 @@ _HANG:
     CALL _WRITESTR
     JMP _HANG ; Hey, a state without exit mustn't remain efficient.
 
+_LOAD:
+    MOV AH, 02 ; Read Sectors
+    MOV AL, 1 ; 1 Sector
+    MOV CH, 0 ; C
+    MOV CL, 1 ; S
+    MOV DH, 0 ; H
+    MOV DL, 1 ; Second floppy
+    MOV BX, 0x2000
+    MOV ES, BX
+    MOV BX, 0X0000
+    INT 0X13
+    JC _LOADFAIL
+    JMP 0X2000:0X0000 
+_LOADFAIL:
+    MOV AX, CS
+    MOV ES, AX
+    PUSH BX
+    MOV BX, NODISK
+    CALL _WRITESTR
+    POP BX
+    RET
+
 _CMDINT:
+   CLD
    MOV SI, CMDLIST + 1
    MOV DI, INBUF
 _CMDCMP: ; Compares the nth entry of the user input to the command in the table pointed to by SI.
-   CMP BYTE [SI], 0xFF
+   CMP BYTE [SI], 0xFF ; End of table?
    JE _NOCMD
    CMPSB
-   JNE _CMDNXT
-   CMP BYTE [SI - 1], 0
+   JNE _CMDNXT ; Next command.
+   CMP BYTE [SI - 1], 0 ; Full match?
    JNE _CMDCMP
    JMP [SI] 
 _CMDNXT:
-   LODSB
+   LODSB ; Fix pointer address to start of next command.
    CMP AL, 0
    JNE _CMDNXT
    MOV DI, INBUF
@@ -147,16 +171,18 @@ _NOCMD:
 INTROMES      db 'BOOT SUCCESSFUL. TERMINAL.', 0
 KERNPREFIX    db 'KERNEL*//>', 0
 NOCOMM        db 'NO COMMAND', 0x0D, 0x0A, 0
+NODISK        db 'NO DISK', 0x0D, 0x0A, 0
 INBUF         TIMES (INBUFSIZE + 1) db 0
 INPTR         dw 0   
 INFSTR        db 'THE KERNEL V', KERNVER, 0x0D, 0x0A, 0
-
 
 CMDLIST       db 0
 TINFO         db 'INFO', 0
 INFO          dw _INFO
 THANG         db 'HANG', 0
 HANG          dw _HANG
+LOAD          db 'LOAD', 0
+TLOAD         dw _LOAD
 END           db 0xFF
 
 ; SECTION .GRAPHICS
@@ -179,7 +205,7 @@ _LOOPIT:
 
 ; SECTION .AUXILARY
 
-_DONOTHING: ; Placeholder for a segment where a loop is necessary.
+_DONOTHING: ; Why is this here?
     JMP _DONOTHING
 
 _RET: ; Useful exit point for conditional returns.
