@@ -1,27 +1,10 @@
 BITS 16
 ORG 0x0000
 
-;DOCUMENTATION: This may be branched into a text file later.
-
-    ;v0.1.1  | LOAD command added that hands control over to the disk in floppy drive two.
-    ;V0.1.0b | Command table is now formatted to handle numerous commands. 
-    ;V0.1.0  | Now you can execute one, yes ONE command. The capability is here, but certainly not formatted to handle a larger table yet.
-    ;V0.0.4  | Input is now properly stored and limited, kernel text can no longer be deleted.
-    ;V0.0.3  | Stack redefined for usage in later variants, input buffer defined.
-    ;V0.0.2  | Implemented F10 as a special key, changing video mode and launching a demo. This will remain untouched until much later.
-    ;V0.0.1b | Reformatted code for attachment to BOOTLOADER.ASM.
-    ;V0.0.1  | Added support for Enter and Backspace keys.
-    ;V0.0.0  | Added basic text functionality.
-
-;FUNCTIONS AND THEIR PARAMETERS:
-
-    ;_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console. Push and pop BX before/after using this or you will regret it.
-    ;_BOOTKEY:  [nil], Not necessarily a function, but enters the graphical environment. There will be no way to return to the terminal.
-
 ; CONSTANTS
 
-INBUFSIZE EQU 16
-%define KERNVER '0.1.1'
+INBUFSIZE EQU 32
+%define KERNVER '0.1.2'
 
 ; SECTION .TERMINAL
 
@@ -33,6 +16,16 @@ _START:
     MOV DS, AX
     MOV SS, AX
     MOV SP, STACK
+_INTINIT:
+    CLI 
+    XOR AX, AX
+    MOV ES, AX
+    MOV WORD [ES:0x100], _WRITEGRAPH ; 0x40
+    MOV WORD [ES:0X102], 0x1000 ; My interrupt now
+    STI
+    MOV AX, CS
+    MOV ES, AX
+_BEGIN:
     MOV BX, INTROMES
     CALL _WRITESTR
     JMP _ENTERPRESSED
@@ -108,7 +101,7 @@ _BOOTKEY:
     MOV AH, 0X0
     MOV AL, 0X11 ; Monochrome VGA
     INT 0X10
-    JMP _INITGRAPHICS  
+    JMP _GRAPHCLR  
 
 _INFO:
     PUSH BX
@@ -123,18 +116,23 @@ _HANG:
     JMP _HANG ; Hey, a state without exit mustn't remain efficient.
 
 _LOAD:
+    PUSH ES
+    XOR AH, AH ; Reset Drive Status
+    MOV DL, 1 ; Second floppy
+    INT 0x13
     MOV AH, 02 ; Read Sectors
     MOV AL, 1 ; 1 Sector
     MOV CH, 0 ; C
     MOV CL, 1 ; S
     MOV DH, 0 ; H
-    MOV DL, 1 ; Second floppy
     MOV BX, 0x2000
     MOV ES, BX
     MOV BX, 0X0000
     INT 0X13
+    POP ES
     JC _LOADFAIL
-    JMP 0X2000:0X0000 
+    MOV BYTE [DISKLOADED], 1
+    RET
 _LOADFAIL:
     MOV AX, CS
     MOV ES, AX
@@ -142,11 +140,105 @@ _LOADFAIL:
     MOV BX, NODISK
     CALL _WRITESTR
     POP BX
+    MOV BYTE [DISKLOADED], 0
     RET
 
-_CMDINT:
+_RUN: 
+    CMP BYTE [DISKLOADED], 1
+    JE _HANDOFF
+    PUSH BX
+    MOV BX, NODISK
+    CALL _WRITESTR
+    POP BX
+    RET
+_HANDOFF:
+    JMP 0x2000:0x0000
+
+_LOOK: ; Setup registers and confirm a parameter is provided.
+    PUSH BX
+    MOV SI, DX
+    MOV BYTE [SI + 4], 0
+    CMP BYTE [SI], 0
+    JE _LOOKFAIL
+    XOR DX, DX
+    XOR AX, AX
+    XOR BX, BX
+    MOV CX, 8
+_LOOKCMP: ; Checks with each hexadecimal to ensure correctness.
+    LODSB
+    CMP AL, 0
+    JE _LOOKPRINT
+    CMP AL, '0'
+    JB _LOOKFAIL
+    CMP AL, '9'
+    JBE _LOOKCONV
+    CMP AL, 'A'
+    JB _LOOKFAIL
+    CMP AL, 'F'
+    JA _LOOKFAIL
+_LOOKCONV: ; Convert to raw counterpart.
+    CMP AL, 'A'
+    JB _LOOKNUM
+    SUB AL, 0x37
+    JMP _LOOKSTORE
+_LOOKNUM: ; Ditto.
+    SUB AL, 0x30
+_LOOKSTORE: ; Store the nibble in DX and open room for another; check if input is done. 
+    SAL DX, 4
+    OR DL, AL
+    CMP BYTE [SI], 0
+    JE _LOOKPRINT
+    JMP _LOOKCMP
+_LOOKPRINT: ; Write the value of the two nibbles stored at the constructed memory address.
+    MOV AH, 0xE
+    MOV SI, DX
+    MOV BL, [SI]
+    PUSH BX
+    AND BL, 0xF0
+    ROL BL, 4
+    MOV AL, [HEXTABLE + BX]
+    INT 0x10
+    POP BX
+    AND BL, 0x0F
+    MOV AL, [HEXTABLE + BX]
+    INT 0x10
+    MOV AL, 0x20
+    INT 0x10 
+    DEC CX
+    CMP CX, 0
+    JE _LOOKEND
+    INC DX
+    JMP _LOOKPRINT
+_LOOKEND:
+    MOV BX, INDENT
+    CALL _WRITESTR
+    POP BX
+    RET
+_LOOKFAIL:
+    MOV BX, COMMFAIL
+    CALL _WRITESTR
+    POP BX
+    RET
+
+_READCMD:
+    RET
+
+_CMDINT: ; Setup pointers.
    CLD
    MOV SI, CMDLIST + 1
+   MOV DI, INBUF
+_CMDTOK: ; Separate command from arguments.
+   MOV AL, [DI]
+   CMP AL, 0x00
+   JE _CMDFIX
+   CMP AL, 0x20
+   JNE _SKIPCH
+   MOV BYTE [DI], 0x00
+   LEA DX, [DI + 1] ; Store parameter 1 in DX.
+_SKIPCH:
+    INC DI
+    JMP _CMDTOK
+_CMDFIX:
    MOV DI, INBUF
 _CMDCMP: ; Compares the nth entry of the user input to the command in the table pointed to by SI.
    CMP BYTE [SI], 0xFF ; End of table?
@@ -156,8 +248,8 @@ _CMDCMP: ; Compares the nth entry of the user input to the command in the table 
    CMP BYTE [SI - 1], 0 ; Full match?
    JNE _CMDCMP
    JMP [SI] 
-_CMDNXT:
-   LODSB ; Fix pointer address to start of next command.
+_CMDNXT: ; Fixes pointer address to start of next command.
+   LODSB 
    CMP AL, 0
    JNE _CMDNXT
    MOV DI, INBUF
@@ -168,52 +260,89 @@ _NOCMD:
 
 ; SECTION .TERMINAL_DATA
 
-INTROMES      db 'BOOT SUCCESSFUL. TERMINAL.', 0
+DISKLOADED    db 0 ; Set to 1 when disk data is confirmed in memory, and 0 when not.
+INTROMES      db 'BOOT SUCCESS. TERMINAL.', 0
 KERNPREFIX    db 'KERNEL*//>', 0
-NOCOMM        db 'NO COMMAND', 0x0D, 0x0A, 0
+NOCOMM        db '?', 0x0D, 0x0A, 0
+COMMFAIL      db '*?', 0x0D, 0x0A, 0
 NODISK        db 'NO DISK', 0x0D, 0x0A, 0
+INDENT        db 0x0D, 0x0A, 0
 INBUF         TIMES (INBUFSIZE + 1) db 0
 INPTR         dw 0   
 INFSTR        db 'THE KERNEL V', KERNVER, 0x0D, 0x0A, 0
+HEXTABLE      db '0123456789ABCDEF', 0
 
-CMDLIST       db 0
-TINFO         db 'INFO', 0
-INFO          dw _INFO
-THANG         db 'HANG', 0
-HANG          dw _HANG
-LOAD          db 'LOAD', 0
-TLOAD         dw _LOAD
-END           db 0xFF
+CMDLIST:
+                  db 0
+    INFO          db 'INFO', 0
+                  dw _INFO
+    HANG          db 'HANG', 0
+                  dw _HANG
+    LOAD          db 'LOAD', 0
+                  dw _LOAD
+    RUN           db 'RUN', 0
+                  dw _RUN
+    LOOK          db 'LOOK', 0
+                  dw _LOOK
+    READCMD       db 'READ', 0
+                  dw _READCMD
+    END           db 0xFF
 
 ; SECTION .GRAPHICS
 
-_INITGRAPHICS:
+_GRAPHCLR:
     MOV AX, 0xA000 ; VRAM Location.
     MOV ES, AX
-    MOV AL, 0X00 ; Bit mask.
-    JMP _LOOPIT
-
-_LOOPIT:
-    MOV DI, 0x0 ; Offset of VRAM to begin.
-    MOV CX, 0X9600 ; Amount of times to repeat.
-    CLD
+    XOR DI, DI
+    MOV AL, 0xFF
+    MOV CX, 0x9600
     REP STOSB
-    INC AL
-    JMP _LOOPIT
+_INITGRAPHICS:
+    MOV SI, LETTERTEST ; Bit mask.
+    MOV DI, 0x28 ; Offset of VRAM to begin.
+    INT 0x40
+    JMP _FREEZE
 
 ; SECTION .GRAPHICS_DATA
 
-; SECTION .AUXILARY
+LETTERTEST:
+     db 00H,18H,24H,24H,3CH,24H,24H,00H
 
-_DONOTHING: ; Why is this here?
-    JMP _DONOTHING
+; SECTION .AUXILARY
 
 _RET: ; Useful exit point for conditional returns.
     RET
 
+_FREEZE: ; NOP
+    JMP _FREEZE
+
+
+; SECTION .INTERRUPTS
+
+_WRITEGRAPH: ; 0x40
+    PUSH CX
+    PUSH AX
+    PUSH DI
+    MOV CX, 8
+_WGLOOP:
+    LODSB
+    MOV AH, [ES:DI]
+    XOR AH, AL
+    MOV [ES:DI], AH
+    DEC CX
+    JNZ _WGCONT
+_WGEND:
+    POP DI
+    POP AX
+    POP CX
+    IRET
+_WGCONT:
+    ADD DI, 80
+    JMP _WGLOOP
+
 ; SECTION .END
 
-TIMES 512-($-$$) db 0
+TIMES 1024-($-$$) db 0
 
 STACKINIT:
     TIMES 1024 db 0

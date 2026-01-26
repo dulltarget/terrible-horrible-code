@@ -1,0 +1,23 @@
+DOCUMENTATION:
+
+    V0.1.2  | LOOK command allows for the viewing of memory at a certain byte in the segment. Added some functional potential (albeit quite rough) to graphical mode. Created INT 0x40.
+    V0.1.1  | LOAD command added that hands control over to the disk in floppy drive two.
+    V0.1.0b | Command table is now formatted to handle numerous commands. 
+    V0.1.0  | Now you can execute one, yes ONE command. The capability is here, but certainly not formatted to handle a larger table yet.
+    V0.0.4  | Input is now properly stored and limited, kernel text can no longer be deleted.
+    V0.0.3  | Stack redefined for usage in later variants, input buffer defined.
+    V0.0.2  | Implemented F10 as a special key, changing video mode and launching a demo. This will remain untouched until much later.
+    V0.0.1b | Reformatted code for attachment to BOOTLOADER.ASM.
+    V0.0.1  | Added support for Enter and Backspace keys.
+    V0.0.0  | Added basic text functionality.
+
+FUNCTIONS AND THEIR PARAMETERS:
+
+_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console. Push and pop BX before/after using this or you will regret it.
+
+_BOOTKEY:  [nil], Not necessarily a function, but enters the graphical environment. There will be no way to return to the terminal.
+
+INTERRUPTS AND THEIR DESCRIPTIONS:
+    
+0x40: [(DI, offset), (SI, character address)], Writes the 8x8 bitmap stored at the address of SI at the location of DI. Requires VGA Graphics Mode 11h (640x480 1-bit).
+    
