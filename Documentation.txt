@@ -1,5 +1,6 @@
 DOCUMENTATION:
 
+    V0.1.3  | An entire font rendering system, with a simplistic font to match. Programming is now feasible, as 0x40 can be used by any image loaded by LOAD.
     V0.1.2  | LOOK command allows for the viewing of memory at a certain byte in the segment. Added some functional potential (albeit quite rough) to graphical mode. Created INT 0x40.
     V0.1.1  | LOAD command added that hands control over to the disk in floppy drive two.
     V0.1.0b | Command table is now formatted to handle numerous commands. 
@@ -11,13 +12,16 @@ DOCUMENTATION:
     V0.0.1  | Added support for Enter and Backspace keys.
     V0.0.0  | Added basic text functionality.
 
+
+IMPORTANT:
+    Items in square brackets are pairs of required registers and their values to set BEFORE a call. All data is handled and restored implicitly UNLESS stated otherwise.
+
 FUNCTIONS AND THEIR PARAMETERS:
 
-_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console. Push and pop BX before/after using this or you will regret it.
+_WRITESTR: [(BX, 'STRNAME')], Prints a specified string to the console. BX is NOT restored, please preserve it before setting this up.
 
-_BOOTKEY:  [nil], Not necessarily a function, but enters the graphical environment. There will be no way to return to the terminal.
-
-INTERRUPTS AND THEIR DESCRIPTIONS:
+INTERRUPTS AND THEIR DESCRIPTIONS: 
     
-0x40: [(DI, offset), (SI, character address)], Writes the 8x8 bitmap stored at the address of SI at the location of DI. Requires VGA Graphics Mode 11h (640x480 1-bit).
-    
+0x40: [(ES, A000)] Requires VGA Graphics Mode 11h (640x480 1-bit).
+    AH-0:[No parameters!], Fills the entirety of 11h VRAM with white. Comparable to a screen clearer. 
+    AH-1:[(DI, offset),(AL, ASCII)], Writes the 8x8 ASCII character stored in AL from the system font at the location of DI. 
