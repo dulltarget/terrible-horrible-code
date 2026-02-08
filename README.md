@@ -1,7 +1,3 @@
 Just some silly assembly stuff
 
-Honestly, this is just fun now I enjoy this
-
-Regulations be shot
-
-
+if you want to know anything for whatever reason you can just ask, i dont mind whatsoever
