@@ -8,13 +8,12 @@ _START:
     MOV AH, 14
     MOV AL, 'A'
     INT 0X10
-
-    MOV AH, 02 ; Read Sectors
-    MOV AL, 4 ; 4 Sectors (2K)
-    MOV CH, 0 ; Cylinder Number
-    MOV CL, 2 ; Sector Number
-    MOV DH, 0 ; Head Number
-    MOV DL,  [BOOTID] ; The ID, Y'know
+    MOV AH, 02 ; Read
+    MOV AL, 6 ; 4 Sectors (3K)
+    MOV CH, 0 ; From Cylinder 0
+    MOV CL, 2 ; Starting from Sector 2 (1)
+    MOV DH, 0 ; On Head 0
+    MOV DL, [BOOTID] ; The ID, Y'know
     MOV BX, 0x1000
     MOV ES, BX ; Address
     MOV BX, 0X0000 ; Offset
@@ -25,6 +24,3 @@ _START:
 BOOTID DB 0
 times 510-($-$$) db 0
 dw 0AA55h
-
-
-
