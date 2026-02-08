@@ -4,7 +4,7 @@ ORG 0x0000
 ; CONSTANTS
 
 INBUFSIZE EQU 32
-%define KERNVER '0.1.2'
+%define KERNVER '0.1.3'
 
 ; SECTION .TERMINAL
 
@@ -60,13 +60,14 @@ _WRITE:
     JMP _READ
 
 _WRITESTR:
-    MOV AL, [BX]
     MOV AH, 0EH
+_WRITESTRL:
+    MOV AL, [BX]
     CMP AL, 0
     JE _RET
     INT 0x10
     INC BX
-    JMP _WRITESTR
+    JMP _WRITESTRL
 
 _ENTERPRESSED:
     MOV BX, [INPTR]
@@ -101,7 +102,7 @@ _BOOTKEY:
     MOV AH, 0X0
     MOV AL, 0X11 ; Monochrome VGA
     INT 0X10
-    JMP _GRAPHCLR  
+    JMP _INITGRAPHICS
 
 _INFO:
     PUSH BX
@@ -288,26 +289,6 @@ CMDLIST:
                   dw _READCMD
     END           db 0xFF
 
-; SECTION .GRAPHICS
-
-_GRAPHCLR:
-    MOV AX, 0xA000 ; VRAM Location.
-    MOV ES, AX
-    XOR DI, DI
-    MOV AL, 0xFF
-    MOV CX, 0x9600
-    REP STOSB
-_INITGRAPHICS:
-    MOV SI, LETTERTEST ; Bit mask.
-    MOV DI, 0x28 ; Offset of VRAM to begin.
-    INT 0x40
-    JMP _FREEZE
-
-; SECTION .GRAPHICS_DATA
-
-LETTERTEST:
-     db 00H,18H,24H,24H,3CH,24H,24H,00H
-
 ; SECTION .AUXILARY
 
 _RET: ; Useful exit point for conditional returns.
@@ -316,33 +297,131 @@ _RET: ; Useful exit point for conditional returns.
 _FREEZE: ; NOP
     JMP _FREEZE
 
+; SECTION .GRAPHICS
+
+_GRAPHCLR:
+    PUSH AX
+    PUSH DI
+    MOV AX, 0xA000 ; VRAM Location.
+    MOV ES, AX
+    XOR DI, DI
+    MOV AL, 0xFF
+    MOV CX, 0x9600
+    REP STOSB
+    POP DI
+    POP AX
+    RET
+
+_INITGRAPHICS:
+    CALL _GRAPHCLR
+    MOV AL, 'A' ; Char to print.
+    MOV CX, 63
+    XOR DI, DI
+    MOV AH, 1
+_WRITEALL: ; FONT TEST
+    INT 0x40
+    DEC CX
+    JZ _FREEZE
+    INC AL
+_INCNORMAL:
+    INC DI
+    JMP _WRITEALL
+
+; SECTION .GRAPHICS_DATA
+SVRERRSTR:
+    GRAPOVERT db 'GRAPH OVERFLOW',0 ; Attempt to write beyond graphical memory. Bound violation 1.
+    OVERREADT db 'MEM OVERREAD',0 ; Faulty index resulting in an overread. Bound violation 2.
+    ERRERRT db 'DUAL ERR',0 ; This should never even appear. Faulty error handler code.
+
+FONT:
+    %INCLUDE "FONT.ASM" ; We're gonna need a bigger bootloader.
+
+_SVRERR: ; Or, alternatively... "_IWILLADDAFIXFORTHISERRORLATERBUTDONTWANTTORIGHTNOW:"
+    MOV SP, STACK
+    MOV DI, 0x4B26 ; Screen center
+    MOV AH, 1 ; 40:WRITE
+    CALL _GRAPHCLR
+    CMP AL, 1 ; Error code
+    JE _GRAPOVER
+    CMP AL, 2
+    JE _OVERREAD
+    JMP _ERRERR
+_GRAPOVER:
+    MOV SI, GRAPOVERT
+    JMP _ERRLOOP
+_OVERREAD:
+    MOV SI, OVERREADT
+    JMP _ERRLOOP
+_ERRERR:
+    MOV SI, ERRERRT
+    JMP _ERRLOOP
+_ERRLOOP:
+    LODSB
+    CMP AL, 0
+    JE _FREEZE
+    INT 0x40
+    INC DI
+    JMP _ERRLOOP
 
 ; SECTION .INTERRUPTS
 
 _WRITEGRAPH: ; 0x40
-    PUSH CX
     PUSH AX
+    PUSH BX
+    PUSH CX
     PUSH DI
+    PUSH ES
+    PUSH SI
+    CMP AH, 0
+    JE _WGCLR
+    CMP AH, 1
+    JE _WGFONT8
+    JMP _WGEND
+_WGFONT8:
+    CMP DI, 38320
+    JA _40OVER
+    SUB AL, 32
+    JB _WGEND ; Exit if control char provided.
+    CMP AL, 96
+    JA _40OREAD ; Crash on invalid char.
+    XOR AH, AH
+    SHL AX, 3
+    MOV BX, AX
+    LEA SI, [FONT+BX]
     MOV CX, 8
+    MOV AX, 0xA000
+    MOV ES, AX
 _WGLOOP:
-    LODSB
+    CS LODSB
     MOV AH, [ES:DI]
     XOR AH, AL
     MOV [ES:DI], AH
     DEC CX
-    JNZ _WGCONT
-_WGEND:
-    POP DI
-    POP AX
-    POP CX
-    IRET
+    JZ _WGEND
 _WGCONT:
     ADD DI, 80
     JMP _WGLOOP
+_WGEND:
+    POP SI
+    POP ES
+    POP DI
+    POP CX
+    POP BX
+    POP AX
+    IRET
+_WGCLR:
+    CALL _GRAPHCLR
+    JMP _WGEND
+_40OVER:
+    MOV AL, 1
+    JMP _SVRERR ; Now you've done it
+_40OREAD:
+    MOV AL, 2
+    JMP _SVRERR
 
 ; SECTION .END
 
-TIMES 1024-($-$$) db 0
+TIMES 2048-($-$$) db 0
 
 STACKINIT:
     TIMES 1024 db 0
